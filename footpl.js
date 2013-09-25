@@ -1,3 +1,6 @@
+var fs=require('fs');
+var path=require('path');
+
 var codeFunctions={
 	'set (.*?) (.*?)':function(ctx,variable,val){
 		ctx.addReferences(variable);
@@ -35,12 +38,35 @@ var codeFunctions={
 	'block (.*?)':function(ctx){return 'block';},
 	'endblock':function(ctx){return 'endblock';},
 	'macro ([^\\(]*)\\(([^\\)]*?)\\)':function(ctx,name,parms){
+		ctx.open('macro');
 		var code='function '+name+'('+parms+'){\n';
 		code+='var str="";\n';
 		return code;
 	},
-	'endmacro':function(ctx){return 'return str;\n}\n';},
-	'import':function(ctx){return 'import';}
+	'endmacro':function(ctx){ctx.close('macro');return 'return str;\n}\n';},
+	'import "(.*?)" as (.*?)':function(ctx,filename,name){
+		var fullPath=path.resolve(ctx.basePath,filename);
+		var fileData=fs.readFileSync(fullPath).toString();
+		var foo=new FooTpl();
+		var macros=[];
+		var prevLength=0;
+		var func=foo.compile(fileData,{basePath:path.dirname(fullPath),contextHook:function(ctx,action,name){
+			if((action==='open')&&(name==='macro')){
+				prevLength=ctx.getFunc().length;
+			}
+			if((action==='close')&&(name==='macro')){
+				macros.push({name:'ehem',code:ctx.getFunc().substr(prevLength)});
+			}
+		}});
+
+		var code='var '+name+'={\n';
+		for(var m=0;m<macros.length;m++){
+			if(m>0)code+=',';
+			code+=macros[m].name+':'+macros[m].code;
+		}
+		code+='}\n';
+		return code;
+	}
 };
 //massage code patterns into proper (ugly) regex
 var codePatterns=[];
@@ -71,9 +97,32 @@ function addData(text){
 }
 
 
-var Context=function(){
+var Context=function(basePath){
 	this.references=[];
 	this.stack=[];
+	this.basePath=basePath || __dirname;
+	this.hook=null;
+	this.func='var str="";\n';
+}
+
+Context.prototype.getFunc=function(){return this.func;}
+
+Context.prototype.addData=function(text){
+	if(text.length<=0)return;
+	text=text.replace(/\n/g,'\\n');
+	this.func+='str+="'+text+'";\n';
+}
+
+Context.prototype.addValue=function(val){
+	this.func+='str+='+val+';\n';
+}
+
+Context.prototype.addCode=function(code){
+	this.func+=code;
+}
+
+Context.prototype.setHook=function(hook){
+	this.hook=hook;
 }
 
 Context.prototype.addReferences=function(str){
@@ -100,12 +149,15 @@ Context.prototype.curName=function(){
 
 Context.prototype.open=function(name){
 	this.stack.push({name:name});
+
+	if(this.hook!==null)this.hook(this,'open',name);
 }
 
 Context.prototype.close=function(name){
 	var curName=this.curName();
 	if(curName===name)this.stack.pop();
 	else throw new Error('unbalanced section, '+curName+' was open, but trying to close '+name);
+	if(this.hook!==null)this.hook(this,'close',name);
 }
 
 Context.prototype.isOpen=function(){
@@ -114,7 +166,8 @@ Context.prototype.isOpen=function(){
 
 var FooTpl=module.exports=function(){}
 
-FooTpl.prototype.compile=function(template){
+FooTpl.prototype.compile=function(template,options){
+	if(options===undefined)options={};
 	var stTEXT='TEXT';
 	var stTAG='TAG';
 	var stVAL='VAL';
@@ -127,7 +180,8 @@ FooTpl.prototype.compile=function(template){
 	var text='';
 	var tag='';
 	var val='';
-	var ctx=new Context();
+	var ctx=new Context(options.basePath);
+	if(options.contextHook!==undefined)ctx.setHook(options.contextHook);
 	for(var i=0;i<template.length;i++){
 		var c=template.charAt(i);
 		switch(state){
@@ -137,14 +191,14 @@ FooTpl.prototype.compile=function(template){
 				if(nextC===chSECOND){
 					state=stTAG;
 					i++;
-					func+=addData(text);
+					ctx.addData(text);
 					tag='';
 					continue;
 				}
 				else if(nextC===chVAL){
 					state=stVAL;
 					i++;
-					func+=addData(text);
+					ctx.addData(text);
 					val='';
 					continue;					
 				}
@@ -158,7 +212,7 @@ FooTpl.prototype.compile=function(template){
 					state=stTEXT;
 					i++;
 					text='';
-					func+=compileTag(ctx,tag);
+					ctx.addCode(compileTag(ctx,tag));
 					continue;
 				}
 			}
@@ -171,7 +225,7 @@ FooTpl.prototype.compile=function(template){
 					state=stTEXT;
 					i++;
 					text='';
-					func+='str+='+val+';\n';
+					ctx.addValue(val);
 					continue;
 				}
 			}
@@ -179,8 +233,8 @@ FooTpl.prototype.compile=function(template){
 			break;
 		}
 	}
-	func+=addData(text);
-	func+='return str;\n';
+	ctx.addData(text);
+	ctx.addCode('return str;\n');
 
 	if(ctx.isOpen())throw new Error('missing end for tag'+ctx.curName());
 
@@ -194,8 +248,8 @@ FooTpl.prototype.compile=function(template){
 		footer+=comma+'__dict["'+ctx.references[r]+'"]';
 	}
 	header+='){\n';
-	func=header+func+footer+');\n';
-//	console.log(func);
+	var func=header+ctx.getFunc()+footer+');\n';
+	console.log(func);
 	var compiled=new Function('__dict',func);
 	compiled.code=func;
 	return compiled;
