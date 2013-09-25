@@ -1,0 +1,20 @@
+{
+  "author": "Alex Scheel Meyer",
+  "name": "footpl",
+  "description": "Foo Templating Library",
+  "version": "0.1.0",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/alexscheelmeyer/footpl.git"
+  },
+  "main": "footpl.js",
+  "scripts": {
+    "test": "mocha"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "optionalDependencies": {},
+  "engines": {
+    "node": "*"
+  }
+}
