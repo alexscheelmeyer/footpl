@@ -63,25 +63,28 @@ var codeFunctions={
 			}
 			else combinedBlocks.push(superBlock);
 		}
+		var savedReferences=ctx.references.slice(0);
 		ctx.popState();
+		//popstate discards everything that has not been explicitly transfered, so add back the references that might have come from overriding blocks
+		for(var r=0;r<savedReferences.length;r++)ctx.addReferences(savedReferences[r]);
 		ctx.close('with'); //close it again since we just popped a previous state where is was still open
 		for(var cb=0;cb<combinedBlocks.length;cb++)ctx.addBlock(combinedBlocks[cb].name,combinedBlocks[cb].code);
 	},
 	'block (.*?)':function(ctx,name){
-		ctx.open('block');
-		ctx.addValue(name+'()');
+		ctx.open('block',{name:name});
+		ctx.addValue('__blocks.'+name+'()');
 		ctx.buffering(true);
-		var code='function '+name+'(__super){\n';
+		var code='function(__super){\n';
 		code+='var str="";\n';
 		ctx.addCode(code);
 	},
 	'endblock':function(ctx){
 		ctx.addCode('return str;\n}\n');
 		var buf=ctx.getBuffer();
-		ctx.addBlock(buf.match(/^function ([^\(]*)/)[1],buf);
 		ctx.buffering(false);
 		ctx.clearBuffer();
-		ctx.close('block');
+		var oldFrame=ctx.close('block');
+		ctx.addBlock(oldFrame.name,buf);
 	},
 	'super':function(ctx){
 		ctx.addValue('__super()');
@@ -365,11 +368,13 @@ FooTpl.prototype.compile=function(template,options){
 	header+='){\n';
 
 	var blocks=ctx.getBlocks();
+	header+='var __blocks={\n';
 	for(var b=0;b<blocks.length;b++){
 		var block=blocks[b];
-		header+='var '+block.name+'='+block.code+';\n';
+		if(b>0)header+=',';
+		header+=block.name+':'+block.code+'\n';
 	}
-	header+='var str="";\n';
+	header+='}\nvar str="";\n';
 
 	var func=header+ctx.getFunc()+footer+');\n';
 //	console.log(func);

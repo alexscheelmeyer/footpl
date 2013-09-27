@@ -9,4 +9,11 @@ describe('Block Tag',function(){
 		assert.equal(renderTpl(),'habla espanol?');
 	});
 
+	it('should not shadow pass parameter namespace',function(){
+		var foo=new FooTpl();
+		var tpl='{% block language %}habla {# language #}?{% endblock %}';
+		var renderTpl=foo.compile(tpl);
+		assert.equal(renderTpl({language:'espanol'}),'habla espanol?');
+	});
+
 });

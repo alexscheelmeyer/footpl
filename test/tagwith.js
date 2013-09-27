@@ -30,4 +30,11 @@ describe('With Tag',function(){
 		assert.equal(renderTpl(),'->habla espanol?<-');
 	});
 
+	it('should have references to parameters in overriding blocks',function(){
+		var foo=new FooTpl();
+		var tpl='{% with "tagwithhelper3.foo" %}{% block test %}habla {# language #}?{% endblock %}{% endwith %}';
+		var renderTpl=foo.compile(tpl,{basePath:__dirname});
+		assert.equal(renderTpl({language:'svenska'}),'->habla svenska?');
+	});
+
 });
