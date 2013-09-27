@@ -135,7 +135,7 @@ function compileTag(ctx,tag){
 		}
 	}
 
-	ctx.addVal('dict["'+tag+'"]');
+	//unrecognized tag - ignore
 }
 
 
@@ -186,7 +186,7 @@ Context.prototype.getBlocks=function(){return this.blocks;}
 
 Context.prototype.addData=function(text){
 	if(text.length<=0)return;
-	text=text.replace(/\n/g,'\\n');
+	text=text.replace(/\n/g,'\\n').replace(/\"/g,'\\"');
 	this.addCode('str+="'+text+'";\n');
 }
 
@@ -219,6 +219,11 @@ Context.prototype.resolve=function(filename){
 	return fullPath;
 }
 
+
+function isNumber(o){
+  return ! isNaN (o-0) && o !== null && o !== "" && o !== false;
+}
+
 Context.prototype.addReferences=function(str){
 	var noOperators=str.replace(/[^\w\s.]/g,' ');
 	var parts=noOperators.split(' ');
@@ -227,6 +232,7 @@ Context.prototype.addReferences=function(str){
 		part=part.replace(/\s/g,'');
 		if(part.indexOf('.')>0)part=part.split('.')[0];
 		if(part.length<=0)continue;
+		if(isNumber(part))continue;
 		var found=false;
 		for(var r=0;r<this.references.length;r++){
 			if(this.references[r]===part){
@@ -373,4 +379,10 @@ FooTpl.prototype.compile=function(template,options){
 }
 
 
-
+//Express JS wrapper
+FooTpl.prototype.renderFile=function(fullPath,parameters,callback){
+	var fileData=fs.readFileSync(fullPath).toString();
+	var foo=new FooTpl();//express.js obscures "this" pointer :(
+	var func=foo.compile(fileData,{basePath:path.dirname(fullPath)});
+	callback(null,func(parameters));
+}
