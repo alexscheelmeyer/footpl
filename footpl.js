@@ -189,6 +189,7 @@ Context.prototype.getBlocks=function(){return this.blocks;}
 
 Context.prototype.addData=function(text){
 	if(text.length<=0)return;
+	text=text.replace(/\\/g,'\\\\');
 	text=text.replace(/\n/g,'\\n').replace(/\"/g,'\\"');
 	this.addCode('str+="'+text+'";\n');
 }
@@ -233,9 +234,10 @@ Context.prototype.addReferences=function(str){
 	for(var p=0;p<parts.length;p++){
 		var part=parts[p];
 		part=part.replace(/\s/g,'');
-		if(part.indexOf('.')>0)part=part.split('.')[0];
+		if(part.indexOf('.')>=0)part=part.split('.')[0];
 		if(part.length<=0)continue;
 		if(isNumber(part))continue;
+		if(part==='JSON')continue;//dont shadow JSON
 		var found=false;
 		for(var r=0;r<this.references.length;r++){
 			if(this.references[r]===part){
