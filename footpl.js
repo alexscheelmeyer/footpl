@@ -4,7 +4,7 @@ var path=require('path');
 var codeFunctions={
 	'set (.*?) (.*?)':function(ctx,variable,val){
 		ctx.addReferences(variable);
-		return variable+'='+val+';\n';
+		ctx.addCode(variable+'='+val+';\n');
 	},
 	'each (.*?) in (.*?)':function(ctx,variable,collection){
 		ctx.open('each');
@@ -12,50 +12,99 @@ var codeFunctions={
 		var code='for(var __i=0;__i<'+collection+'.length;__i++){\n';
 		code+='  var loop={index:__i,index1:__i+1,first:__i===0,last:__i==='+collection+'.length-1};\n';
 		code+='  var '+variable+'='+collection+'[__i];\n';
-		return code;
+		ctx.addCode(code);
 	},
-	'endeach':function(ctx){ctx.close('each');return '}\n';},
+	'endeach':function(ctx){ctx.addCode('}\n');ctx.close('each');},
 	'loop (.*?) (.*?) to (.*?)':function(ctx,variable,start,stop){
 		ctx.open('loop');
 		var code='for(var '+variable+'='+start+';'+variable+'<='+stop+';'+variable+'++){\n';
 		code+='  var loop={index:'+variable+'};\n';
-		return code;
+		ctx.addCode(code);
 	},
-	'endloop':function(ctx){ctx.close('loop');return '}\n';},
+	'endloop':function(ctx){ctx.addCode('}\n');ctx.close('loop');},
 	'if (.*?)':function(ctx,condition){
 		ctx.open('if');
 		ctx.addReferences(condition);
-		return 'if('+condition+'){\n';
+		ctx.addCode('if('+condition+'){\n');
 	},
 	'elseif (.*?)':function(ctx,condition){
 		ctx.addReferences(condition);
-		return '}\nelse if('+condition+'){\n';
+		ctx.addCode('}\nelse if('+condition+'){\n');
 	},
-	'else':function(ctx){return '}\nelse{\n';},
-	'endif':function(ctx){ctx.close('if');return '}\n';},
-	'with \"(.*?)\"':function(ctx){return 'with';},
-	'endwith':function(ctx){return 'endwith';},
-	'block (.*?)':function(ctx){return 'block';},
-	'endblock':function(ctx){return 'endblock';},
+	'else':function(ctx){ctx.addCode('}\nelse{\n');},
+	'endif':function(ctx){ctx.addCode('}\n');ctx.close('if');},
+	'with \"(.*?)\"':function(ctx,filename){
+		var fullPath=ctx.resolve(filename);
+		var fileData=fs.readFileSync(fullPath).toString();
+		var foo=new FooTpl();
+		var subCtx=foo.compileCore(fileData,{basePath:path.dirname(fullPath)});
+		ctx.open('with',{blocks:subCtx.getBlocks()});
+		for(var r=0;r<subCtx.references.length;r++){
+			ctx.addReferences(subCtx.references[r]);
+		}
+		ctx.addCode(subCtx.getFunc());
+		ctx.pushState();
+	},
+	'endwith':function(ctx){
+		var oldFrame=ctx.close('with');
+		var blocks=ctx.getBlocks();
+		var combinedBlocks=[];
+		for(var b=0;b<oldFrame.blocks.length;b++){
+			var superBlock=oldFrame.blocks[b];
+			var overrideBlock=null;
+			for(var b2=0;b2<blocks.length;b2++){
+				if(blocks[b2].name===superBlock.name){
+					overrideBlock=blocks[b2];
+					break;
+				}
+			}
+			if(overrideBlock!==null){
+				combinedBlocks.push({name:overrideBlock.name,code:'function(){return ('+overrideBlock.code+')('+superBlock.code+');\n}'});
+			}
+			else combinedBlocks.push(superBlock);
+		}
+		ctx.popState();
+		ctx.close('with'); //close it again since we just popped a previous state where is was still open
+		for(var cb=0;cb<combinedBlocks.length;cb++)ctx.addBlock(combinedBlocks[cb].name,combinedBlocks[cb].code);
+	},
+	'block (.*?)':function(ctx,name){
+		ctx.open('block');
+		ctx.addValue(name+'()');
+		ctx.buffering(true);
+		var code='function '+name+'(__super){\n';
+		code+='var str="";\n';
+		ctx.addCode(code);
+	},
+	'endblock':function(ctx){
+		ctx.addCode('return str;\n}\n');
+		var buf=ctx.getBuffer();
+		ctx.addBlock(buf.match(/^function ([^\(]*)/)[1],buf);
+		ctx.buffering(false);
+		ctx.clearBuffer();
+		ctx.close('block');
+	},
+	'super':function(ctx){
+		ctx.addValue('__super()');
+	},
 	'macro ([^\\(]*)\\(([^\\)]*?)\\)':function(ctx,name,parms){
-		ctx.open('macro');
+		ctx.open('macro',{name:name,parms:parms});
 		var code='function '+name+'('+parms+'){\n';
 		code+='var str="";\n';
-		return code;
+		ctx.addCode(code);
 	},
-	'endmacro':function(ctx){ctx.close('macro');return 'return str;\n}\n';},
+	'endmacro':function(ctx){ctx.addCode('return str;\n}\n');ctx.close('macro');},
 	'import "(.*?)" as (.*?)':function(ctx,filename,name){
-		var fullPath=path.resolve(ctx.basePath,filename);
+		var fullPath=ctx.resolve(filename);
 		var fileData=fs.readFileSync(fullPath).toString();
 		var foo=new FooTpl();
 		var macros=[];
 		var prevLength=0;
-		var func=foo.compile(fileData,{basePath:path.dirname(fullPath),contextHook:function(ctx,action,name){
+		var func=foo.compile(fileData,{basePath:path.dirname(fullPath),contextHook:function(ctx,action,name,frame){
 			if((action==='open')&&(name==='macro')){
 				prevLength=ctx.getFunc().length;
 			}
 			if((action==='close')&&(name==='macro')){
-				macros.push({name:'ehem',code:ctx.getFunc().substr(prevLength)});
+				macros.push({name:frame.name,code:ctx.getFunc().substr(prevLength)});
 			}
 		}});
 
@@ -65,7 +114,7 @@ var codeFunctions={
 			code+=macros[m].name+':'+macros[m].code;
 		}
 		code+='}\n';
-		return code;
+		ctx.addCode(code);
 	}
 };
 //massage code patterns into proper (ugly) regex
@@ -82,47 +131,92 @@ function compileTag(ctx,tag){
 		if(matched!==null){
 			var args=[ctx].concat(matched.slice(1));
 			var code=pattern.func.apply(null,args);
-			return code;
+			return;
 		}
 	}
 
-	return 'str+=dict["'+tag+'"];\n';
+	ctx.addVal('dict["'+tag+'"]');
 }
 
 
-function addData(text){
-	if(text.length<=0)return '';
-	text=text.replace(/\n/g,'\\n');
-	return 'str+="'+text+'";\n';
-}
-
-
-var Context=function(basePath){
+var Context=function(importPaths){
+	this.states=[];
 	this.references=[];
 	this.stack=[];
-	this.basePath=basePath || __dirname;
+	this.importPaths=importPaths || [__dirname];
 	this.hook=null;
-	this.func='var str="";\n';
+	this.func='';
+	this.shouldBuffer=false;
+	this.buffer='';
+	this.blocks=[];
+}
+
+Context.prototype.pushState=function(){
+	this.states.push({references:this.references.slice(0),
+					  stack:this.stack.slice(0),
+					  importPaths:this.importPaths.slice(0),
+					  hook:this.hook,
+					  func:this.func,
+					  shouldBuffer:this.shouldBuffer,
+					  buffer:this.buffer,
+					  blocks:this.blocks.slice(0)});
+}
+
+Context.prototype.popState=function(){
+	var oldState=this.states.pop();
+	this.references=oldState.references;
+	this.stack=oldState.stack;
+	this.importPaths=oldState.importPaths;
+	this.hook=oldState.hook;
+	this.func=oldState.func;
+	this.shouldBuffer=oldState.shouldBuffer;
+	this.buffer=oldState.buffer;
+	this.blocks=oldState.blocks;
 }
 
 Context.prototype.getFunc=function(){return this.func;}
 
+Context.prototype.getBuffer=function(){return this.buffer;}
+
+Context.prototype.clearBuffer=function(){this.buffer=''}
+
+Context.prototype.buffering=function(yesorno){this.shouldBuffer=yesorno;}
+
+Context.prototype.getBlocks=function(){return this.blocks;}
+
 Context.prototype.addData=function(text){
 	if(text.length<=0)return;
 	text=text.replace(/\n/g,'\\n');
-	this.func+='str+="'+text+'";\n';
+	this.addCode('str+="'+text+'";\n');
 }
 
 Context.prototype.addValue=function(val){
-	this.func+='str+='+val+';\n';
+	this.addCode('str+='+val+';\n');
 }
 
 Context.prototype.addCode=function(code){
-	this.func+=code;
+	if(this.shouldBuffer)this.buffer+=code;
+	else this.func+=code;
+}
+
+Context.prototype.addBlock=function(name,code){
+	this.blocks.push({name:name,code:code});
 }
 
 Context.prototype.setHook=function(hook){
 	this.hook=hook;
+}
+
+Context.prototype.resolve=function(filename){
+	var fullPath=filename;
+	for(var p=0;p<this.importPaths.length;p++){
+		var full=path.resolve(this.importPaths[p],filename);
+		if(fs.existsSync(full)){
+			fullPath=full;
+			break;
+		}
+	}
+	return fullPath;
 }
 
 Context.prototype.addReferences=function(str){
@@ -132,6 +226,7 @@ Context.prototype.addReferences=function(str){
 		var part=parts[p];
 		part=part.replace(/\s/g,'');
 		if(part.indexOf('.')>0)part=part.split('.')[0];
+		if(part.length<=0)continue;
 		var found=false;
 		for(var r=0;r<this.references.length;r++){
 			if(this.references[r]===part){
@@ -144,30 +239,36 @@ Context.prototype.addReferences=function(str){
 }
 
 Context.prototype.curName=function(){
-	if(this.stack.length>0)return this.stack[this.stack.length-1].name;
+	if(this.stack.length>0)return this.stack[this.stack.length-1].frameName;
 }
 
-Context.prototype.open=function(name){
-	this.stack.push({name:name});
+Context.prototype.open=function(name,parms){
+	var frame={frameName:name};
+	if(parms===undefined)parms={};
+	for(var p in parms){frame[p]=parms[p];}
+	this.stack.push(frame);
 
-	if(this.hook!==null)this.hook(this,'open',name);
+	if(this.hook!==null)this.hook(this,'open',name,frame);
 }
 
 Context.prototype.close=function(name){
 	var curName=this.curName();
-	if(curName===name)this.stack.pop();
-	else throw new Error('unbalanced section, '+curName+' was open, but trying to close '+name);
-	if(this.hook!==null)this.hook(this,'close',name);
+	var oldFrame=this.stack.pop();
+	if(curName!==name)throw new Error('unbalanced section, '+curName+' was open, but trying to close '+name);
+	if(this.hook!==null)this.hook(this,'close',name,oldFrame);
+	return oldFrame;
 }
 
 Context.prototype.isOpen=function(){
 	return this.stack.length>0;
 }
 
-var FooTpl=module.exports=function(){}
+var FooTpl=module.exports=function(options){
+	this.options=options || {};
+	if(this.options.importPaths===undefined)this.options.importPaths=[];
+}
 
-FooTpl.prototype.compile=function(template,options){
-	if(options===undefined)options={};
+FooTpl.prototype.compileCore=function(template,options){
 	var stTEXT='TEXT';
 	var stTAG='TAG';
 	var stVAL='VAL';
@@ -176,11 +277,10 @@ FooTpl.prototype.compile=function(template,options){
 	var chSECOND='%';
 	var chVAL='#';
 	var state=stTEXT;
-	var func='var str="";\n';
 	var text='';
 	var tag='';
 	var val='';
-	var ctx=new Context(options.basePath);
+	var ctx=new Context(this.options.importPaths.concat([options.basePath]));
 	if(options.contextHook!==undefined)ctx.setHook(options.contextHook);
 	for(var i=0;i<template.length;i++){
 		var c=template.charAt(i);
@@ -212,7 +312,7 @@ FooTpl.prototype.compile=function(template,options){
 					state=stTEXT;
 					i++;
 					text='';
-					ctx.addCode(compileTag(ctx,tag));
+					compileTag(ctx,tag);
 					continue;
 				}
 			}
@@ -225,6 +325,7 @@ FooTpl.prototype.compile=function(template,options){
 					state=stTEXT;
 					i++;
 					text='';
+					ctx.addReferences(val);
 					ctx.addValue(val);
 					continue;
 				}
@@ -234,9 +335,17 @@ FooTpl.prototype.compile=function(template,options){
 		}
 	}
 	ctx.addData(text);
-	ctx.addCode('return str;\n');
 
-	if(ctx.isOpen())throw new Error('missing end for tag'+ctx.curName());
+	if(ctx.isOpen())throw new Error('missing end for tag '+ctx.curName());
+
+	return ctx;
+}
+
+FooTpl.prototype.compile=function(template,options){
+	if(options===undefined)options={};
+
+	var ctx=this.compileCore(template,options);
+	ctx.addCode('return str;\n');
 
 	//make local environment for code
 	var header='if(__dict===undefined)__dict={};\nreturn (function(';
@@ -248,8 +357,16 @@ FooTpl.prototype.compile=function(template,options){
 		footer+=comma+'__dict["'+ctx.references[r]+'"]';
 	}
 	header+='){\n';
+
+	var blocks=ctx.getBlocks();
+	for(var b=0;b<blocks.length;b++){
+		var block=blocks[b];
+		header+='var '+block.name+'='+block.code+';\n';
+	}
+	header+='var str="";\n';
+
 	var func=header+ctx.getFunc()+footer+');\n';
-	console.log(func);
+//	console.log(func);
 	var compiled=new Function('__dict',func);
 	compiled.code=func;
 	return compiled;
