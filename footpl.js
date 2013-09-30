@@ -1,20 +1,37 @@
 var fs=require('fs');
 var path=require('path');
 
+var loopId=1;
 var codeFunctions={
 	'set (.*?) (.*?)':function(ctx,variable,val){
 		ctx.addReferences(variable);
 		ctx.addCode(variable+'='+val+';\n');
 	},
 	'each (.*?) in (.*?)':function(ctx,variable,collection){
-		ctx.open('each');
+		ctx.open('each',{loopId:loopId,collection:collection});
 		ctx.addReferences(collection);
-		var code='for(var __i=0;__i<'+collection+'.length;__i++){\n';
-		code+='  var loop={index:__i,index1:__i+1,first:__i===0,last:__i==='+collection+'.length-1};\n';
-		code+='  var '+variable+'='+collection+'[__i];\n';
-		ctx.addCode(code);
+		ctx.addCode('function __loop'+loopId+'('+variable+',loop){\n');
+		ctx.initData();
+		loopId++;
 	},
-	'endeach':function(ctx){ctx.addCode('}\n');ctx.close('each');},
+	'endeach':function(ctx){
+		ctx.endData();
+		var frame=ctx.getFrame();
+		var code='';
+		code+='if('+frame.collection+' instanceof Array){\n';
+		code+='  for(var __i=0;__i<'+frame.collection+'.length;__i++){\n';
+		code+='    str+=__loop'+frame.loopId+'('+frame.collection+'[__i],{index:__i,index1:__i+1,first:__i===0,last:__i==='+frame.collection+'.length-1});\n';
+		code+='  }\n';
+		code+='}else{\n';
+		code+='  var __i=0;\n';
+		code+='  for(var __key in '+frame.collection+'){\n';
+		code+='    str+=__loop'+frame.loopId+'('+frame.collection+'[__key],{index:__i,index1:__i+1,key:__key});\n';
+		code+='    __i++\n;';
+		code+='  }\n';
+		code+='}\n';
+		ctx.addCode(code);
+		ctx.close('each');
+	},
 	'loop (.*?) (.*?) to (.*?)':function(ctx,variable,start,stop){
 		ctx.open('loop');
 		var code='for(var '+variable+'='+start+';'+variable+'<='+stop+';'+variable+'++){\n';
@@ -37,7 +54,8 @@ var codeFunctions={
 		var fullPath=ctx.resolve(filename);
 		var fileData=fs.readFileSync(fullPath).toString();
 		var foo=new FooTpl();
-		var subCtx=foo.compileCore(fileData,{basePath:path.dirname(fullPath)});
+		var options={basePath:path.dirname(fullPath)};
+		var subCtx=foo.compileCore(fileData,foo.makeContext(options),options);
 		ctx.open('with',{blocks:subCtx.getBlocks()});
 		for(var r=0;r<subCtx.references.length;r++){
 			ctx.addReferences(subCtx.references[r]);
@@ -68,23 +86,21 @@ var codeFunctions={
 		//popstate discards everything that has not been explicitly transfered, so add back the references that might have come from overriding blocks
 		for(var r=0;r<savedReferences.length;r++)ctx.addReferences(savedReferences[r]);
 		ctx.close('with'); //close it again since we just popped a previous state where is was still open
-		for(var cb=0;cb<combinedBlocks.length;cb++)ctx.addBlock(combinedBlocks[cb].name,combinedBlocks[cb].code);
+		for(var cb=0;cb<combinedBlocks.length;cb++)ctx.addBlock(combinedBlocks[cb]);
 	},
 	'block (.*?)':function(ctx,name){
 		ctx.open('block',{name:name});
 		ctx.addValue('__blocks.'+name+'()');
-		ctx.buffering(true);
+		ctx.startBuffering();
 		var code='function(__super){\n';
-		code+='var str="";\n';
 		ctx.addCode(code);
+		ctx.initData();
 	},
 	'endblock':function(ctx){
-		ctx.addCode('return str;\n}\n');
-		var buf=ctx.getBuffer();
-		ctx.buffering(false);
-		ctx.clearBuffer();
+		ctx.endData();
+		var buf=ctx.endBuffering();
 		var oldFrame=ctx.close('block');
-		ctx.addBlock(oldFrame.name,buf);
+		ctx.addBlock({name:oldFrame.name,code:buf});
 	},
 	'super':function(ctx){
 		ctx.addValue('__super()');
@@ -92,32 +108,25 @@ var codeFunctions={
 	'macro ([^\\(]*)\\(([^\\)]*?)\\)':function(ctx,name,parms){
 		ctx.open('macro',{name:name,parms:parms});
 		var code='function '+name+'('+parms+'){\n';
-		code+='var str="";\n';
 		ctx.addCode(code);
+		ctx.initData();
 	},
-	'endmacro':function(ctx){ctx.addCode('return str;\n}\n');ctx.close('macro');},
-	'import "(.*?)" as (.*?)':function(ctx,filename,name){
+	'endmacro':function(ctx){ctx.endData();ctx.close('macro');},
+	'import "(.*?)" as (.*?)':function(ctx,filename,namespace){
 		var fullPath=ctx.resolve(filename);
 		var fileData=fs.readFileSync(fullPath).toString();
 		var foo=new FooTpl();
+
 		var macros=[];
-		var prevLength=0;
 		var func=foo.compile(fileData,{basePath:path.dirname(fullPath),contextHook:function(ctx,action,name,frame){
-			if((action==='open')&&(name==='macro')){
-				prevLength=ctx.getFunc().length;
-			}
-			if((action==='close')&&(name==='macro')){
-				macros.push({name:frame.name,code:ctx.getFunc().substr(prevLength)});
+			if(name==='macro'){
+				if(action==='open')ctx.startBuffering();
+				else if(action==='close'){
+					macros.push(frame.name+':'+ctx.endBuffering());
+				}
 			}
 		}});
-
-		var code='var '+name+'={\n';
-		for(var m=0;m<macros.length;m++){
-			if(m>0)code+=',';
-			code+=macros[m].name+':'+macros[m].code;
-		}
-		code+='}\n';
-		ctx.addCode(code);
+		ctx.addCode('var '+namespace+'={\n'+macros.join(',')+'}\n');
 	}
 };
 //massage code patterns into proper (ugly) regex
@@ -167,6 +176,9 @@ Context.prototype.pushState=function(){
 
 Context.prototype.popState=function(){
 	var oldState=this.states.pop();
+	var diffFunc=this.func.substr(oldState.func.length);
+	var diffReferences=this.references.slice(oldState.references.length);
+	var diffBlocks=this.blocks.slice(oldState.blocks.length);
 	this.references=oldState.references;
 	this.stack=oldState.stack;
 	this.importPaths=oldState.importPaths;
@@ -175,17 +187,26 @@ Context.prototype.popState=function(){
 	this.shouldBuffer=oldState.shouldBuffer;
 	this.buffer=oldState.buffer;
 	this.blocks=oldState.blocks;
+	
+	//return diff of oldstate with new state
+	return {func:diffFunc,references:diffReferences,blocks:diffBlocks};
 }
 
+Context.prototype.clear=function(){this.func='';}
 Context.prototype.getFunc=function(){return this.func;}
 
-Context.prototype.getBuffer=function(){return this.buffer;}
-
-Context.prototype.clearBuffer=function(){this.buffer=''}
-
-Context.prototype.buffering=function(yesorno){this.shouldBuffer=yesorno;}
+Context.prototype.startBuffering=function(){this.shouldBuffer=true;}
+Context.prototype.endBuffering=function(){this.shouldBuffer=false;var b=this.buffer;this.buffer='';return b;}
 
 Context.prototype.getBlocks=function(){return this.blocks;}
+
+Context.prototype.initData=function(){
+	this.addCode('var str="";\n');
+}
+
+Context.prototype.endData=function(){
+	this.addCode('return str;\n}\n');
+}
 
 Context.prototype.addData=function(text){
 	if(text.length<=0)return;
@@ -203,8 +224,8 @@ Context.prototype.addCode=function(code){
 	else this.func+=code;
 }
 
-Context.prototype.addBlock=function(name,code){
-	this.blocks.push({name:name,code:code});
+Context.prototype.addBlock=function(block){
+	this.blocks.push(block);
 }
 
 Context.prototype.setHook=function(hook){
@@ -262,6 +283,11 @@ Context.prototype.open=function(name,parms){
 	if(this.hook!==null)this.hook(this,'open',name,frame);
 }
 
+Context.prototype.getFrame=function(){
+	if(this.stack.length<=0)return null;
+	return this.stack[this.stack.length-1];
+}
+
 Context.prototype.close=function(name){
 	var curName=this.curName();
 	var oldFrame=this.stack.pop();
@@ -279,7 +305,7 @@ var FooTpl=module.exports=function(options){
 	if(this.options.importPaths===undefined)this.options.importPaths=[];
 }
 
-FooTpl.prototype.compileCore=function(template,options){
+FooTpl.prototype.compileCore=function(template,ctx,options){
 	var stTEXT='TEXT';
 	var stTAG='TAG';
 	var stVAL='VAL';
@@ -291,7 +317,6 @@ FooTpl.prototype.compileCore=function(template,options){
 	var text='';
 	var tag='';
 	var val='';
-	var ctx=new Context(this.options.importPaths.concat([options.basePath]));
 	if(options.contextHook!==undefined)ctx.setHook(options.contextHook);
 	for(var i=0;i<template.length;i++){
 		var c=template.charAt(i);
@@ -352,33 +377,42 @@ FooTpl.prototype.compileCore=function(template,options){
 	return ctx;
 }
 
+FooTpl.prototype.makeContext=function(options){
+	return new Context(this.options.importPaths.concat([options.basePath]));
+}
+
 FooTpl.prototype.compile=function(template,options){
 	if(options===undefined)options={};
 
-	var ctx=this.compileCore(template,options);
-	ctx.addCode('return str;\n');
+	var ctx=this.makeContext(options);
+	this.compileCore(template,ctx,options);
 
-	//make local environment for code
-	var header='if(__dict===undefined)__dict={};\nreturn (function(';
-	var footer='})(';
-	for(var r=0;r<ctx.references.length;r++){
-		var comma=',';
-		if(r==0)comma='';
-		header+=comma+ctx.references[r];
-		footer+=comma+'__dict["'+ctx.references[r]+'"]';
-	}
-	header+='){\n';
+	var compiled=ctx.getFunc();
+	ctx.clear();// we are starting over to prefix header
 
-	var blocks=ctx.getBlocks();
-	header+='var __blocks={\n';
-	for(var b=0;b<blocks.length;b++){
-		var block=blocks[b];
-		if(b>0)header+=',';
-		header+=block.name+':'+block.code+'\n';
-	}
-	header+='}\nvar str="";\n';
+	ctx.addCode('if(__dict===undefined)__dict={};\nreturn (function(');
+	ctx.addCode(ctx.references.join());
+	ctx.addCode('){\n');
+	ctx.initData();
+	ctx.addCode('var __blocks={\n');
+	ctx.addCode(ctx.getBlocks().map(function(block){
+		return block.name+':'+block.code+'\n';
+	}).join());
+	ctx.addCode('}\n');
 
-	var func=header+ctx.getFunc()+footer+');\n';
+	//header done, add back the previously compiled
+	ctx.addCode(compiled);
+
+	//now the footer
+	ctx.endData();
+	ctx.addCode(')(');
+	ctx.addCode(ctx.references.map(function(ref){
+		return '__dict["'+ref+'"]';
+	}).join());
+	ctx.addCode(');\n');
+
+	var func=ctx.getFunc();
+
 //	console.log(func);
 	var compiled=new Function('__dict',func);
 	compiled.code=func;
