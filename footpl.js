@@ -25,7 +25,7 @@ var codeFunctions={
 		ctx.addCode('  var __i=0;\n');
 		ctx.addCode('  for(var __key in '+frame.collection+'){\n');
 		ctx.addValue('__loop'+frame.loopId+'('+frame.collection+'[__key],{index:__i,index1:__i+1,key:__key})');
-		ctx.addCode('    __i++\n;');
+		ctx.addCode('    __i++;\n');
 		ctx.addCode('  }\n');
 		ctx.addCode('}\n');
 		ctx.close('each');
@@ -394,11 +394,14 @@ FooTpl.prototype.compile=function(template,options){
 	ctx.addCode(ctx.references.join());
 	ctx.addCode('){\n');
 	ctx.initData();
-	ctx.addCode('var __blocks={\n');
-	ctx.addCode(ctx.getBlocks().map(function(block){
-		return block.name+':'+block.code+'\n';
-	}).join());
-	ctx.addCode('}\n');
+	var blocks=ctx.getBlocks();
+	if(blocks.length>0){
+		ctx.addCode('var __blocks={\n');
+		ctx.addCode(blocks.map(function(block){
+			return block.name+':'+block.code+'\n';
+		}).join());
+		ctx.addCode('}\n');
+	}
 
 	//header done, add back the previously compiled
 	ctx.addCode(compiled);
