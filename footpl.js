@@ -17,19 +17,17 @@ var codeFunctions={
 	'endeach':function(ctx){
 		ctx.endData();
 		var frame=ctx.getFrame();
-		var code='';
-		code+='if('+frame.collection+' instanceof Array){\n';
-		code+='  for(var __i=0;__i<'+frame.collection+'.length;__i++){\n';
-		code+='    str+=__loop'+frame.loopId+'('+frame.collection+'[__i],{index:__i,index1:__i+1,first:__i===0,last:__i==='+frame.collection+'.length-1});\n';
-		code+='  }\n';
-		code+='}else{\n';
-		code+='  var __i=0;\n';
-		code+='  for(var __key in '+frame.collection+'){\n';
-		code+='    str+=__loop'+frame.loopId+'('+frame.collection+'[__key],{index:__i,index1:__i+1,key:__key});\n';
-		code+='    __i++\n;';
-		code+='  }\n';
-		code+='}\n';
-		ctx.addCode(code);
+		ctx.addCode('if('+frame.collection+' instanceof Array){\n');
+		ctx.addCode('  for(var __i=0;__i<'+frame.collection+'.length;__i++){\n');
+		ctx.addValue('__loop'+frame.loopId+'('+frame.collection+'[__i],{index:__i,index1:__i+1,first:__i===0,last:__i==='+frame.collection+'.length-1})');
+		ctx.addCode('  }\n');
+		ctx.addCode('}else{\n');
+		ctx.addCode('  var __i=0;\n');
+		ctx.addCode('  for(var __key in '+frame.collection+'){\n');
+		ctx.addValue('__loop'+frame.loopId+'('+frame.collection+'[__key],{index:__i,index1:__i+1,key:__key})');
+		ctx.addCode('    __i++\n;');
+		ctx.addCode('  }\n');
+		ctx.addCode('}\n');
 		ctx.close('each');
 	},
 	'loop (.*?) (.*?) to (.*?)':function(ctx,variable,start,stop){
@@ -201,22 +199,22 @@ Context.prototype.endBuffering=function(){this.shouldBuffer=false;var b=this.buf
 Context.prototype.getBlocks=function(){return this.blocks;}
 
 Context.prototype.initData=function(){
-	this.addCode('var str="";\n');
+	this.addCode('var __str="";\n');
 }
 
 Context.prototype.endData=function(){
-	this.addCode('return str;\n}\n');
+	this.addCode('return __str;\n}\n');
 }
 
 Context.prototype.addData=function(text){
 	if(text.length<=0)return;
 	text=text.replace(/\\/g,'\\\\');
 	text=text.replace(/\n/g,'\\n').replace(/\"/g,'\\"');
-	this.addCode('str+="'+text+'";\n');
+	this.addCode('__str+="'+text+'";\n');
 }
 
 Context.prototype.addValue=function(val){
-	this.addCode('str+='+val+';\n');
+	this.addCode('__str+='+val+';\n');
 }
 
 Context.prototype.addCode=function(code){
@@ -362,7 +360,9 @@ FooTpl.prototype.compileCore=function(template,ctx,options){
 					i++;
 					text='';
 					ctx.addReferences(val);
+					ctx.addCode('if(('+val+')!==undefined){\n');
 					ctx.addValue(val);
+					ctx.addCode('}\n');
 					continue;
 				}
 			}
