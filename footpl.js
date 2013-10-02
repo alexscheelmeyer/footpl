@@ -51,9 +51,8 @@ var codeFunctions={
 	'with \"(.*?)\"':function(ctx,filename){
 		var fullPath=ctx.resolve(filename);
 		var fileData=fs.readFileSync(fullPath).toString();
-		var foo=new FooTpl();
-		var options={basePath:path.dirname(fullPath)};
-		var subCtx=foo.compileCore(fileData,foo.makeContext(options),options);
+		var foo=new FooTpl(mergeHashes(ctx.fooOptions,{basePath:path.dirname(fullPath)}));
+		var subCtx=foo.compileCore(fileData,new Context(foo.options));
 		ctx.open('with',{blocks:subCtx.getBlocks()});
 		for(var r=0;r<subCtx.references.length;r++){
 			ctx.addReferences(subCtx.references[r]);
@@ -120,15 +119,17 @@ var codeFunctions={
 		var foo=new FooTpl();
 
 		var macros=[];
-		var func=foo.compile(fileData,{basePath:path.dirname(fullPath),contextHook:function(ctx,action,name,frame){
+		var func=foo.compile(fileData,{basePath:path.dirname(fullPath),contextHook:function(subCtx,action,name,frame){
 			if(name==='macro'){
-				if(action==='open')ctx.startBuffering();
+				if(action==='open')subCtx.pushState();
 				else if(action==='close'){
-					macros.push(frame.name+':'+ctx.endBuffering());
+					var diff=subCtx.popState();
+					macros.push(namespace+'.'+diff.func);
+					ctx.addReferences(diff.references.join(' '));
 				}
 			}
 		}});
-		ctx.addCode('var '+namespace+'={\n'+macros.join(',')+'}\n');
+		ctx.addCode('var '+namespace+'={}\n'+macros.join('\n'));
 	}
 };
 //massage code patterns into proper (ugly) regex
@@ -153,16 +154,17 @@ function compileTag(ctx,tag){
 }
 
 
-var Context=function(importPaths){
+var Context=function(fooOptions){
 	this.states=[];
 	this.references=[];
 	this.stack=[];
-	this.importPaths=importPaths || [__dirname];
+	this.importPaths=fooOptions.importPaths.concat([fooOptions.basePath]);
 	this.hook=null;
 	this.func='';
 	this.shouldBuffer=false;
 	this.buffer='';
 	this.blocks=[];
+	this.fooOptions=fooOptions;
 }
 
 Context.prototype.pushState=function(){
@@ -280,9 +282,8 @@ Context.prototype.open=function(name,parms){
 	var frame={frameName:name};
 	if(parms===undefined)parms={};
 	for(var p in parms){frame[p]=parms[p];}
-	this.stack.push(frame);
-
 	if(this.hook!==null)this.hook(this,'open',name,frame);
+	this.stack.push(frame);
 }
 
 Context.prototype.getFrame=function(){
@@ -302,6 +303,14 @@ Context.prototype.isOpen=function(){
 	return this.stack.length>0;
 }
 
+function mergeHashes(hasha,hashb){
+	if(hashb===undefined)return hasha;
+	var merged={};
+	for(var keya in hasha)merged[keya]=hasha[keya];
+	for(var keyb in hashb)merged[keyb]=hashb[keyb];
+	return merged;
+}
+
 var FooTpl=module.exports=function(options){
 	this.options=options || {};
 	if(this.options.importPaths===undefined)this.options.importPaths=[];
@@ -319,6 +328,7 @@ FooTpl.prototype.compileCore=function(template,ctx,options){
 	var text='';
 	var tag='';
 	var val='';
+	options=mergeHashes(this.options,options);
 	if(options.contextHook!==undefined)ctx.setHook(options.contextHook);
 	for(var i=0;i<template.length;i++){
 		var c=template.charAt(i);
@@ -382,24 +392,17 @@ FooTpl.prototype.compileCore=function(template,ctx,options){
 	return ctx;
 }
 
-FooTpl.prototype.makeContext=function(options){
-	return new Context(this.options.importPaths.concat([options.basePath]));
-}
 
 FooTpl.prototype.compile=function(template,options){
-	if(options===undefined)options={};
+	options=mergeHashes(this.options,options);
 
-	var ctx=this.makeContext(options);
+	var ctx=new Context(options);
 	this.compileCore(template,ctx,options);
 
 	var compiled=ctx.getFunc();
 	ctx.clear();// we are starting over to prefix header
 
 	ctx.addCode('if(__dict===undefined)__dict={};\n');
-/*	ctx.addCode('return (function(');
-	ctx.addCode(ctx.references.join());
-	ctx.addCode('){\n');*/
-
 
 	for(var r=0;r<ctx.references.length;r++){
 		var ref=ctx.references[r];
@@ -423,12 +426,6 @@ FooTpl.prototype.compile=function(template,options){
 //	ctx.endData();
 	ctx.addCode('return __str;\n');
 
-/*	ctx.addCode(')(');
-	ctx.addCode(ctx.references.map(function(ref){
-		return '__dict["'+ref+'"]';
-	}).join());
-	ctx.addCode(');\n');
-*/
 	var func=ctx.getFunc();
 
 //	console.log(func);
@@ -437,11 +434,24 @@ FooTpl.prototype.compile=function(template,options){
 	return compiled;
 }
 
+FooTpl.prototype.addImportPath=function(path){
+	this.options.importPaths=this.options.importPaths.concat([path]);
+}
+
+FooTpl.prototype.renderFile=function(fullPath,parameters,options){
+	var fileData=fs.readFileSync(fullPath).toString();
+	options=mergeHashes(this.options,options);
+	options=mergeHashes(options,{basePath:path.dirname(fullPath)});
+	var func=this.compile(fileData,options);
+	return func(parameters);
+}
 
 //Express JS wrapper
-FooTpl.prototype.renderFile=function(fullPath,parameters,callback){
-	var fileData=fs.readFileSync(fullPath).toString();
-	var foo=new FooTpl();//express.js obscures "this" pointer :(
-	var func=foo.compile(fileData,{basePath:path.dirname(fullPath)});
-	callback(null,func(parameters));
+FooTpl.prototype.expressEngine=function(){
+	var self=this;
+	return function(fullPath,parameters,callback){
+		var foo=new FooTpl(self.options);//express.js obscures "this" pointer :(
+		var rendered=foo.renderFile(fullPath,parameters);
+		callback(null,rendered);
+	};
 }
