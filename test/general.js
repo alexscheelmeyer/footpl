@@ -10,6 +10,11 @@ describe('compile',function(){
 		assert.equal(renderTpl({}),'habla espanol');
 	});
 
+	it('should throw on unrecognized command',function(){
+		var tpl='{% unknown %}';
+		assert.throws(function(){foo.compile(tpl);});
+	});
+
 	it('should allow rendering file directly',function(){
 		assert.equal(foo.renderFile(__dirname+'/tagwithhelper2.foo',{language:'svenska'}),'habla svenska?');
 	});

@@ -150,7 +150,8 @@ function compileTag(ctx,tag){
 		}
 	}
 
-	//unrecognized tag - ignore
+	//unrecognized tag
+	throw new Error('Does not know how to act on :'+tag);
 }
 
 
