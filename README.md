@@ -1,6 +1,6 @@
 Introduction
 -----
-A templating library designed for being flexible, concise and powerful. It does have a test suite but it is purposefully not designed to keep you from shooting yourself in the foot. 
+A templating library designed to be flexible, concise and powerful. It does have a test suite but it is purposefully not designed to keep you from shooting yourself in the foot. 
 
 Features
 -----
