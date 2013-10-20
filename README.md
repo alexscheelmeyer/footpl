@@ -2,6 +2,17 @@ Introduction
 -----
 A templating library designed for being flexible, concise and powerful. It does have a test suite but it is purposefully not designed to keep you from shooting yourself in the foot. 
 
+Features
+-----
+Some of the features supported
+   * All basic logic needed
+   * Reuse through macros and inheritance
+   * Integrates well with Javascript
+   * Configurable include-paths
+   * Pretty good performance
+   * No dependencies
+   * Built-in Express.js support
+
 Philosophy
 -----
 A templating library is basically a tool for inverting the data/code duality. It needs to do two things well : a) take a piece of data (such as a string) and recognize all parts
@@ -35,6 +46,18 @@ Code-logic instead uses the `{%` and `%}` set of escape-tags.
 <a href="login();">Login</a>
 {% endif %}
 ```
+
+To use a template the process is to compile the template first to get a function. Calling that function with parameters
+will then produce the output.
+
+```javascript
+var FooTpl=require('footpl');
+var foo=new FooTpl();
+var tpl='habla {# language #}?';
+var renderTpl=foo.compile(tpl);
+renderTpl({language:'espanol'}); //produces "habla espanol?"
+```
+
 
 
 Integration With Express.js
