@@ -174,6 +174,17 @@ will produce "->habla espanol?<-".
 Remember to always close the with tag with `endwith`. This actually allows you to do multiple parts in your template
 that inherits from different parent templates, the parent template is not global.
 
+
+Integration With Express.js
+-----
+To facilitate easy usage from Express, an instance of FooTpl provides you with the `expressEngine` method.
+
+```javascript
+app.engine('.html',foo.expressEngine());
+```
+This tells Express to use FooTpl for rendering your views, simple as that.
+
+
 Details to Note
 -----
 ### Whitespace
@@ -211,13 +222,5 @@ Please be gentle.
 If it fails let me know though, and I will try to fix it.
 
 
-Integration With Express.js
------
-To facilitate easy usage from Express, an instance of FooTpl provides you with the `expressEngine` method.
-
-```javascript
-app.engine('.html',foo.expressEngine());
-```
-This tells Express to use FooTpl for rendering your views, simple as that.
 
 
