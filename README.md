@@ -143,7 +143,36 @@ could produce the proper head-tag you want :
 </head>
 ```
 
+### With
+The with tag is for inheritance. You use it together with the block tag to delimit parts of the parent template
+that you want to override in the child-template.
 
+So given you have a template file with this content
+```
+->{% block test %}habla espanol?{% endblock %}
+```
+and you reference that as "parent.foo" in another template
+```
+{% with "parent.foo" %}
+{% block test %}habla svenska?{% endblock %}
+{% endwith %}
+```
+it will produce "->habla svenska?" as the test-block in the child will override the parent block but you still get the
+"->" part from the parent.
+
+If you want to output the output of the overrided block you can reference it with the super tag :
+
+```
+{% with "parent.foo" %}
+{% block test %}
+{% super %}<-
+{% endblock %}
+{% endwith %}
+```
+will produce "->habla espanol?<-".
+
+Remember to always close the with tag with `endwith`. This actually allows you to do multiple parts in your template
+that inherits from different parent templates, the parent template is not global.
 
 Details to Note
 -----
