@@ -32,13 +32,13 @@ Usage
 To delimit the code from the data, FooTpl uses two sets of escape-tags. The difference is that one set is for expressing
 code-logic such as conditionals or iteration and the other is for outputting values.
 
-Outputting values is through the `{#` and `#}` set of escape-tags.
+Outputting values is through the `{#` and `#}` set of code-escape-tags.
 ```html
 <title>{# title #}</title>
 ```
 This assumes that `title` is part of the parameters sent to the template-function.
 
-Code-logic instead uses the `{%` and `%}` set of escape-tags.
+Code-logic instead uses the `{%` and `%}` set of variable-escape-tags.
 ```html
 {% if loggedIn %}
 <a href="logout();">Logout</a>
@@ -58,6 +58,128 @@ var renderTpl=foo.compile(tpl);
 renderTpl({language:'espanol'}); //produces "habla espanol?"
 ```
 
+Supported Tags
+-----
+
+### If
+An if tag takes an arbitrary conditional statement and outputs the data within the tag if evaluated to true. You can
+use `else` and `elseif`. You must remember to close the tag with `endif`
+
+```
+{% if habla %}
+  espanol!
+{% elseif prata %}
+  svenska!
+{% else %}
+  no habla
+{% endif %}
+```
+
+### Set
+The set tag is used to set a named variable to a value. This can sometimes be necessary to avoid repeated code.
+
+```
+{% set habla true %}
+{% if habla %}espanol!{% endif %}
+```
+will always output "espanol!"
+
+### Each
+The each tag is used to repeat some data for all the items in an array or all the keys in an object.
+
+You can decide the name for each item and use that to reference it within the tag.
+Assuming the parameter alphabet is provided to the compiled function, this will print the alphabet:
+```
+{% each character in alphabet %}{# character #}\n{% endeach %}
+```
+Within the each tag you also have access to certain special variables.
+
+  * loop.index - the 0-base index into the array or object.
+  * loop.index1 - the 1-base index into the array or object.
+  * loop.first - true if this is the first item in an array.
+  * loop.last - true if this is the last item in an array.
+
+
+### Loop
+The loop tag is similar to the each tag but allows you to control the index-value yourself.
+
+```
+{% loop a 1 to 8 %}loop{% endloop %}
+```
+Will print "loop" 8 times (both start and stop value is included.
+
+Similarly to the each tag you have access to `loop.index` and `loop.index1` within the loop body.
+
+### Macro
+A macro is like a function declaration. It is a piece of template that you want to reuse in several places. They
+can receive parameters just like normal functions.
+
+```
+{% macro habla(language) %}
+habla {# language #}?
+{% endmacro %}
+
+{# habla("espanol") #}
+```
+Will produce "habla espanol?".
+
+
+### Import
+Macros are especially nice when you collect your best ones into a library of macros to be reused across your site(s).
+To get access to these reusable pieces you use the import tag to import them into the template where you need them.
+
+
+Assuming you have a "head.foo" file with a "style" macro for creating style tags :
+```html
+{% import "head.foo" as head %}
+<head>
+{# head.style("main") #}
+</head>
+```
+could produce the proper head-tag you want :
+```html
+<head>
+<link rel="stylesheet" type="text/css" href="main.css" />
+</head>
+```
+
+
+
+Details to Note
+-----
+### Whitespace
+Within templates no whitespace is ignored. This allows you to control whether you want newlines or not. So
+```
+{% if present %}yes!{% endif %}
+```
+will not contain newlines but 
+```
+{% if present %}
+yes!
+{% endif %}
+```
+will contain 2.
+
+### Undefined Variables
+When using variable-escape-tags it will be silently ignored if the variable is undefined. However this is not the
+case if the variable is referenced in an object that is itself undefined. So assuming that `title` is undefined:
+```html
+<title>{# title #}</title>
+```
+will output an empty tag, but :
+```html
+<title>{# title.toUpperCase() #}</title>
+```
+will fail. This reflects how Javascript works.
+
+### Arbitrary Code
+While FooTpl allows you use arbitrary code in certain places, it also needs to parse that to be able know which
+variables you reference. This is to allow you the convenience of writing `{# title #}` instead of being required
+to always reference a parameters object such as in `{# __parms.title #}`. FooTpl has been tested in real scenarios
+but keep in mind that if you do exceedingly tricky stuff it will probably fail to gather the right references.
+Please be gentle.
+
+If it fails let me know though, and I will try to fix it.
 
 
 Integration With Express.js
