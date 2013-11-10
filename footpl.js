@@ -216,6 +216,7 @@ Context.prototype.endData=function(){
 Context.prototype.addData=function(text){
 	if(text.length<=0)return;
 	text=text.replace(/\\/g,'\\\\');
+	text=text.replace(/\r/g,'');
 	text=text.replace(/\n/g,'\\n').replace(/\"/g,'\\"');
 	this.addCode('__str+="'+text+'";\n');
 }

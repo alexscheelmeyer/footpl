@@ -19,6 +19,12 @@ describe('compile',function(){
 		assert.equal(foo.renderFile(__dirname+'/tagwithhelper2.foo',{language:'svenska'}),'habla svenska?');
 	});
 
+	it('should strip <CR>',function(){
+		var tpl='habla\r\nespanol';
+		var renderTpl=foo.compile(tpl);
+		assert.equal(renderTpl({}),'habla\nespanol');
+	});
+
 	it('should allow adding import-paths',function(){
 		var foo=new FooTpl();
 		foo.addImportPath(__dirname);
