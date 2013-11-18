@@ -265,6 +265,7 @@ Context.prototype.addReferences=function(str){
 		if(part.length<=0)continue;
 		if(isNumber(part))continue;
 		if(part==='JSON')continue;//dont shadow JSON
+		if(part==='true' || part==='false')continue;//dont shadow true and false
 		var found=false;
 		for(var r=0;r<this.references.length;r++){
 			if(this.references[r]===part){
