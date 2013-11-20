@@ -104,7 +104,15 @@ var codeFunctions={
 	},
 	'macro ([^\\(]*)\\(([^\\)]*?)\\)':function(ctx,name,parms){
 		ctx.open('macro',{name:name,parms:parms});
+
+		//NOTE: this is tricky stuff. The macro sourcecode needs to be reusable in two different usecases.
+		//  In the case where the macro is imported the sourcecode needs to be of the form "name=value"
+		//  so it can be attached to the imported namespace through "namespace."+macrosource. On the other
+		//  hand in the normal case the variable needs to be declared so it wont clobber the global
+		//  namespace - this is done by adding the reference, as then the variable will be declared in the
+		//  prologue outside of the macro sourcecode.
 		ctx.addReferences(name);
+
 		var code=name+'=function('+parms+'){\n';
 		ctx.addCode(code);
 		ctx.initData();
@@ -112,6 +120,35 @@ var codeFunctions={
 	'endmacro':function(ctx){
 		ctx.endData();
 		ctx.close('macro');
+	},
+	'wrap ([^\\(]*)\\(([^\\)]*?)\\)':function(ctx,macroName,parms){
+		ctx.open('wrap',{macroName:macroName,parms:parms,buffers:[]});
+		ctx.startBuffering();
+		ctx.initData();
+	},
+	'wrapnext':function(ctx){
+		ctx.endData();
+		var buf=ctx.endBuffering();
+		var frame=ctx.close('wrap');
+		frame.buffers.push(buf);
+		ctx.open('wrap',frame);
+		ctx.startBuffering();
+		ctx.initData();
+	},
+	'endwrap':function(ctx){
+		ctx.endData();
+		var buf=ctx.endBuffering();
+		var oldFrame=ctx.close('wrap');
+		oldFrame.buffers.push(buf);
+		var parms=oldFrame.parms;
+		if(parms.length>0)parms=','+parms;
+		var code=oldFrame.macroName+'(';
+		for(var b=0;b<oldFrame.buffers.length;b++){
+			if(b>0)code+=',';
+			code+='(function(){\n'+oldFrame.buffers[b]+')()\n';
+		}
+		code+=parms+')';
+		ctx.addValue(code);
 	},
 	'import "(.*?)" as (.*?)':function(ctx,filename,namespace){
 		var fullPath=ctx.resolve(filename);
@@ -213,6 +250,10 @@ Context.prototype.endData=function(){
 	this.addCode('return __str;\n}\n');
 }
 
+Context.prototype.dataVar=function(){
+	return '__str';
+}
+
 Context.prototype.addData=function(text){
 	if(text.length<=0)return;
 	text=text.replace(/\\/g,'\\\\');
@@ -223,6 +264,10 @@ Context.prototype.addData=function(text){
 
 Context.prototype.addValue=function(val){
 	this.addCode('__str+='+val+';\n');
+}
+
+Context.prototype.valueStart=function(val){
+	this.addCode('__str+='+val);
 }
 
 Context.prototype.addCode=function(code){
@@ -377,10 +422,8 @@ FooTpl.prototype.compileCore=function(template,ctx,options){
 					i++;
 					text='';
 					ctx.addReferences(val);
-/*					ctx.addCode('if(('+val+')!==undefined){\n');
-					ctx.addValue(val);
-					ctx.addCode('}\n');*/
-					ctx.addValue('(('+val+')!==undefined ? '+val+' : "")');
+					ctx.addCode('var __tmp=('+val+');\n');
+					ctx.addValue('(__tmp!==undefined ? __tmp : "")');
 					continue;
 				}
 			}
@@ -446,6 +489,8 @@ FooTpl.prototype.renderFile=function(fullPath,parameters,options){
 	options=mergeHashes(this.options,options);
 	options=mergeHashes(options,{basePath:path.dirname(fullPath)});
 	var func=this.compile(fileData,options);
+	if(parameters===undefined)parameters={};
+	parameters.templatefile=path.basename(fullPath);
 	return func(parameters);
 }
 

@@ -128,7 +128,6 @@ Will produce "habla espanol?".
 Macros are especially nice when you collect your best ones into a library of macros to be reused across your site(s).
 To get access to these reusable pieces you use the import tag to import them into the template where you need them.
 
-
 Assuming you have a "head.foo" file with a "style" macro for creating style tags :
 ```html
 {% import "head.foo" as head %}
@@ -143,9 +142,64 @@ could produce the proper head-tag you want :
 </head>
 ```
 
+### Wrap
+Reusing macros is important for maintainability, some parts of your pages will be the same across one or more sites. Sometimes
+though, the part that you want to reuse is not a snippet of code within the page but rather the layout of the page or part of the
+page. Reusing layout is tricky because then you have the specifics _within_ the general, not the other way around. While you can use
+the with tag for such usecases (see below), the wrap tag is a strictly low level functional approach whereas the with tag is more
+object oriented.
+
+The wrap tag builds on the macro support by giving you some syntactic sugar that allows you to write macros that take the
+internal content of the layout as a parameter (always the first parameter) and structure it in the template in a natural way.
+This is easier to show than to describe, so here is a short example of a reuseable head-tag macro:
+
+```html
+{% macro head(title,level) %}
+<h{# level #}>{# title #}</h{# level #}>
+{% endmacro %}
+```
+
+This can then later be used over and over everywhere you want a head-tag of some size (the title parameter will be automatically
+filled in, so only the level parameter is needed) :
+
+```html
+{% wrap head(3) %}
+hello world!
+{% endwrap %}
+```
+
+Which would produce `<h3>hello world!</h3>` (though with some newlines). For this example it is easier to just write the
+head tag directly but you can probably imagine how this could be useful to reuse some special 3-column fluid layout for instance.
+
+
+### Wrapnext
+In the case of reusing a multicolumn html layout, it is usually not good enough to be able to wrap a single piece of content and
+use that in a macro - you need to be able to provide the content for all the parts of the layout. You can use the wrapnext
+tag to separate multiple pieces of content and they will be provided to the macro as the first parameters.
+
+example :
+```html
+{% macro anchor(url,text) %}
+<a href="{# url #}">{# text #}</a>
+{% endmacro %}
+```
+
+and then for using it :
+
+```html
+{% wrap anchor() %}http://google.com{% wrapnext %}search{% endwrap %}
+```
+
+which produces `<a href="http://google.com">search</a>`.
+
+
+
 ### With
 The with tag is for inheritance. You use it together with the block tag to delimit parts of the parent template
-that you want to override in the child-template.
+that you want to override in the child-template. Compared to using macros and the wrap tag, this is a higher level approach
+that uses files as the basic unit and allows overriding. You can also combine them - a typical thing to do is to use inheritance
+for reusing a general html structure with doctype, head section, body section, etc. but then reusing the page layout through
+a wrapped macro that you have imported from a standard macro library.
 
 So given you have a template file with this content
 ```

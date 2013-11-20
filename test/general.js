@@ -10,6 +10,17 @@ describe('compile',function(){
 		assert.equal(renderTpl({}),'habla espanol');
 	});
 
+	it('should only evaluate var once',function(){
+		var tpl='{# inc() #}{# inc() #}';
+		var renderTpl=foo.compile(tpl);
+		var counter=0;
+		function inc(){
+			counter++;
+			return counter;
+		}
+		assert.equal(renderTpl({inc:inc}),'12');
+	});
+
 	it('should throw on unrecognized command',function(){
 		var tpl='{% unknown %}';
 		assert.throws(function(){foo.compile(tpl);});
@@ -17,6 +28,10 @@ describe('compile',function(){
 
 	it('should allow rendering file directly',function(){
 		assert.equal(foo.renderFile(__dirname+'/tagwithhelper2.foo',{language:'svenska'}),'habla svenska?');
+	});
+
+	it('should have templatefile constant',function(){
+		assert.equal(foo.renderFile(__dirname+'/templatefile.foo'),'templatefile.foo');
 	});
 
 	it('should strip <CR>',function(){
