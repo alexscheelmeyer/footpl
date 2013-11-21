@@ -1,5 +1,8 @@
 var fs=require('fs');
 var path=require('path');
+var ipcommon=require('ipcommon');
+
+var StructuralError=ipcommon.error.custom('StructuralError');
 
 var loopId=1;
 var codeFunctions={
@@ -123,21 +126,25 @@ var codeFunctions={
 	},
 	'wrap ([^\\(]*)\\(([^\\)]*?)\\)':function(ctx,macroName,parms){
 		ctx.open('wrap',{macroName:macroName,parms:parms,buffers:[]});
-		ctx.startBuffering();
+		ctx.pushState();
 		ctx.initData();
 	},
 	'wrapnext':function(ctx){
 		ctx.endData();
-		var buf=ctx.endBuffering();
+		var diff=ctx.popState();
+		for(var b=0;b<diff.blocks.length;b++)ctx.addBlock(diff.blocks[b]);	
+		var buf=diff.func;
 		var frame=ctx.close('wrap');
 		frame.buffers.push(buf);
 		ctx.open('wrap',frame);
-		ctx.startBuffering();
+		ctx.pushState();
 		ctx.initData();
 	},
 	'endwrap':function(ctx){
 		ctx.endData();
-		var buf=ctx.endBuffering();
+		var diff=ctx.popState();
+		for(var b=0;b<diff.blocks.length;b++)ctx.addBlock(diff.blocks[b]);	
+		var buf=diff.func;
 		var oldFrame=ctx.close('wrap');
 		oldFrame.buffers.push(buf);
 		var parms=oldFrame.parms;
@@ -237,7 +244,12 @@ Context.prototype.popState=function(){
 Context.prototype.clear=function(){this.func='';}
 Context.prototype.getFunc=function(){return this.func;}
 
-Context.prototype.startBuffering=function(){this.shouldBuffer=true;}
+Context.prototype.startBuffering=function(){
+	if(this.shouldBuffer){
+		throw new StructuralError('Nesting buffering sections not allowed');
+	}
+	this.shouldBuffer=true;
+}
 Context.prototype.endBuffering=function(){this.shouldBuffer=false;var b=this.buffer;this.buffer='';return b;}
 
 Context.prototype.getBlocks=function(){return this.blocks;}
@@ -363,6 +375,8 @@ var FooTpl=module.exports=function(options){
 	this.options=options || {};
 	if(this.options.importPaths===undefined)this.options.importPaths=[];
 }
+
+FooTpl.prototype.StructuralError=StructuralError;
 
 FooTpl.prototype.compileCore=function(template,ctx,options){
 	var stTEXT='TEXT';

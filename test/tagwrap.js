@@ -22,5 +22,10 @@ describe('Wrap Tag',function(){
 		assert.equal(renderTpl(),'<a href="http://google.com">search</a>');
 	});
 
+	it('should support blocks',function(){
+		var tpl='{% macro test(a) %}{# a #}{% endmacro %}{% wrap test() %}{% block content %}espanol?{% endblock %}{% endwrap %}';
+		var renderTpl=foo.compile(tpl);
+		assert.equal(renderTpl(),'espanol?');
+	});
 
 });

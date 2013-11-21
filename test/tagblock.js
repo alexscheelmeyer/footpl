@@ -10,10 +10,15 @@ describe('Block Tag',function(){
 		assert.equal(renderTpl(),'habla espanol?');
 	});
 
-	it('should not shadow pass parameter namespace',function(){
+	it('should not shadow parameter namespace',function(){
 		var tpl='{% block language %}habla {# language #}?{% endblock %}';
 		var renderTpl=foo.compile(tpl);
 		assert.equal(renderTpl({language:'espanol'}),'habla espanol?');
+	});
+
+	it('should not allow nested blocks',function(){
+		var tpl='{% block language %}{% block nested %}{% endblock %}{% endblock %}';
+		assert.throws(function(){foo.compile(tpl)},foo.StructuralError);
 	});
 
 });

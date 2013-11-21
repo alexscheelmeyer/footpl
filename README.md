@@ -9,8 +9,8 @@ Some of the features supported
    * Reuse through macros and inheritance
    * Integrates well with Javascript
    * Configurable include-paths
+   * Both functional and OOP approaches supported
    * Pretty good performance
-   * No dependencies
    * Built-in Express.js support
 
 Philosophy
