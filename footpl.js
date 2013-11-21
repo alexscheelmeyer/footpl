@@ -133,6 +133,7 @@ var codeFunctions={
 		ctx.endData();
 		var diff=ctx.popState();
 		for(var b=0;b<diff.blocks.length;b++)ctx.addBlock(diff.blocks[b]);	
+		for(var r=0;r<diff.references.length;r++)ctx.addReferences(diff.references[r]);	
 		var buf=diff.func;
 		var frame=ctx.close('wrap');
 		frame.buffers.push(buf);
@@ -144,6 +145,7 @@ var codeFunctions={
 		ctx.endData();
 		var diff=ctx.popState();
 		for(var b=0;b<diff.blocks.length;b++)ctx.addBlock(diff.blocks[b]);	
+		for(var r=0;r<diff.references.length;r++)ctx.addReferences(diff.references[r]);	
 		var buf=diff.func;
 		var oldFrame=ctx.close('wrap');
 		oldFrame.buffers.push(buf);

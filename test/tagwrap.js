@@ -28,4 +28,10 @@ describe('Wrap Tag',function(){
 		assert.equal(renderTpl(),'espanol?');
 	});
 
+	it('should pick up references within sections',function(){
+		var tpl='{% macro test(a,b) %}{# a #}{# b #}{% endmacro %}{% wrap test() %}{# ain #}{% wrapnext %}{# bin #}{% endwrap %}';
+		var renderTpl=foo.compile(tpl);
+		assert.equal(renderTpl({ain:'habla',bin:' espanol?'}),'habla espanol?');
+	});
+
 });
