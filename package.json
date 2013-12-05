@@ -2,7 +2,7 @@
   "author": "Alex Scheel Meyer",
   "name": "footpl",
   "description": "Foo Templating Library",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "repository": {
     "type": "git",
     "url": "git://github.com/alexscheelmeyer/footpl.git"
@@ -11,7 +11,9 @@
   "scripts": {
     "test": "mocha"
   },
-  "dependencies": {},
+  "dependencies": {
+    "ipcommon" : "0.2.1"
+  },
   "devDependencies": {},
   "optionalDependencies": {},
   "engines": {
